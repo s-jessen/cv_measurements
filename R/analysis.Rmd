@@ -1,0 +1,308 @@
+---
+title: "analysis"
+output: html_document
+date: "2025-01-03"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Load required packages
+```{r}
+library(tidyverse)
+library(here)
+```
+
+Load data file
+```{r}
+data <- readxl::read_xlsx(here::here('data-raw/exp_phys_data.xlsx'))
+
+#There are two duplicate fp names. Make them unique
+data$fp <- make.unique(data$fp)
+
+```
+
+Convert data to long format
+```{r}
+df <- data %>% 
+    # Remove unnecessary columns
+    dplyr::select(-c(time, age, height, sex, weight, bmi, training_status, position,
+                     hematocrit_capillary, plasma_na, hb_g_dl, usg)) %>% 
+    # Pivot longer to create 'posture' and 'measure_type' columns
+    tidyr::pivot_longer(
+        cols = -fp,
+        names_to = c("measure_type", "posture", ".value"),
+        names_pattern = "(sys|dia|hr)_(sit|lying)_(.*)"
+    ) %>% 
+    # Pivot longer again to create 'time_point' column
+    tidyr::pivot_longer(
+        cols = -c(fp, posture, measure_type),
+        names_to = "time_point",
+        values_to = "value"
+    ) %>% 
+    #set levels (for correct order in plot)
+    dplyr::mutate(measure_type = factor(measure_type, levels=c(
+        "sys", "dia", "hr"
+    )))
+
+#Take a look at the data frame to get an idea of the new data layout
+
+```
+
+Visualize I
+```{r}
+#Simplest visualization
+df %>% 
+    #Choose x and y values and color
+    ggplot(aes(x = time_point, y = value, color = fp)) + 
+    #Chose graph type (path can be used for line graph)
+    geom_path(aes(group = fp))+
+    #Choose which variables to split the data into columns and rows by
+    facet_grid(rows = vars(posture),
+               cols = vars(measure_type),
+               scales = "free_y")
+```
+Visualize II (Make the plot more presentable)
+```{r}
+#Better visualization with aesthetic controls
+df %>% 
+    #Choose x and y values and color
+    ggplot(aes(x = time_point, y = value, color = fp)) + 
+    #Chose graph type (path can be used for line graph)
+    geom_path(aes(group = fp))+
+    #Choose which variables to split the data into columns and rows by
+    facet_grid(rows = vars(posture),
+               cols = vars(measure_type),
+               scales = "free_y",
+               labeller = as_labeller(
+                   c("lying" = "Supine position",
+                     "sit" = "Upright position",
+                     "hr" = "Heart rate (bpm)",
+                     "sys" = "Systolic\nblood pressure (mmHg)",
+                     "dia" = "Diastolic\nblood pressure (mmHg)")
+               ),
+               #Make strip label appear on left hand side of plot
+               switch = "y")+
+    #Control aesthetics
+    theme(
+        panel.background = element_blank(),
+        panel.border = element_rect(colour = "black", fill=NA, linewidth = 0.1),
+        panel.grid.minor=element_blank(),
+        panel.grid.major = element_blank(),
+        plot.background = element_rect(fill = "white"),
+        axis.line = element_blank(),
+        axis.text.x = element_text(color = "black", size = 8),
+        axis.text.y = element_text(color = "black", size = 8),
+        axis.ticks = element_line(linewidth = 0.1),
+        axis.title = element_text(size = 8),
+        axis.title.x = element_text(size = 8),
+        axis.title.y = element_text(size = 8),
+        text = element_text(size = 8),
+        #Make legend keys smaller
+        legend.key.size = unit(0.5, "lines"),
+        #Make legend text smaller
+        legend.text = element_text(size = 6), 
+        #Make space between legend entries smaller
+        legend.spacing.y = unit(0.1, "cm"),
+        legend.title = element_blank(),
+        legend.key = element_blank(),
+        strip.background = element_blank(),
+        #Move strip label position to the left of y-axis labels
+        strip.placement = "outside",
+        legend.position = "right"
+    )+
+    labs(y = NULL,
+       x = "Time point")
+
+#Export plot
+ggsave(here::here('data/figures/blood_pressure_and_hr.png'), width = 200, height = 100, units = "mm")
+```
+
+Visualize III (Focus on mean and variance)
+```{r}
+#Calculate means of all values (within each timepoint, posture and measuring type)
+df_means <- df %>% 
+    #Ensure mean calculations are carried out within each subset of data
+    dplyr::group_by(posture, measure_type, time_point) %>% 
+    #Calculate mean
+    dplyr::summarize(mean_value = mean(value)) %>% 
+    dplyr::ungroup()
+
+#Better visualization with aesthetic controls
+df %>% 
+    #Choose x and y values and color
+    ggplot(aes(x = time_point, y = value)) + 
+    #Chose graph type (path can be used for line graph)
+    geom_path(aes(group = fp), color = "gray")+
+    #Add another line for mean values
+    geom_path(data = df_means, aes(group = 1,
+                                   x = time_point,
+                                   y = mean_value),
+              color = "red",
+              linewidth = 1)+
+    #Choose which variables to split the data into columns and rows by
+    facet_grid(rows = vars(measure_type),
+               cols = vars(posture),
+               scales = "free_y",
+               labeller = as_labeller(
+                   c("lying" = "Supine position",
+                     "sit" = "Upright position",
+                     "hr" = "Heart rate (bpm)",
+                     "sys" = "Systolic\nblood pressure (mmHg)",
+                     "dia" = "Diastolic\nblood pressure (mmHg)")
+               ),
+               #Make strip label appear on left hand side of plot
+               switch = "y")+
+    #Control aesthetics
+    theme(
+        panel.background = element_blank(),
+        panel.border = element_rect(colour = "black", fill=NA, linewidth = 0.1),
+        panel.grid.minor=element_blank(),
+        panel.grid.major = element_blank(),
+        plot.background = element_rect(fill = "white"),
+        axis.line = element_blank(),
+        axis.text.x = element_text(color = "black", size = 8),
+        axis.text.y = element_text(color = "black", size = 8),
+        axis.ticks = element_line(linewidth = 0.1),
+        axis.title = element_text(size = 8),
+        axis.title.x = element_text(size = 8),
+        axis.title.y = element_text(size = 8),
+        text = element_text(size = 8),
+        #Make legend keys smaller
+        legend.key.size = unit(0.5, "lines"),
+        #Make legend text smaller
+        legend.text = element_text(size = 6), 
+        #Make space between legend entries smaller
+        legend.spacing.y = unit(0.1, "cm"),
+        legend.title = element_blank(),
+        legend.key = element_blank(),
+        strip.background = element_blank(),
+        #Move strip label position to the left of y-axis labels
+        strip.placement = "outside",
+        legend.position = "right"
+    )+
+    labs(y = NULL,
+       x = "Time point")
+
+#Export plot
+ggsave(here::here('data/figures/blood_pressure_and_hr_with_means.png'), width = 200, height = 100, units = "mm")
+```
+
+Calculate intraindividual CV's
+```{r}
+df_means_and_intra_cv <- df %>% 
+    #Ensure mean calculations are carried out within each subset of data
+    dplyr::group_by(posture, measure_type, fp) %>% 
+    #Calculate mean
+    dplyr::summarize(mean_value = mean(value),
+                     sd_value = sd(value),
+                     cv_value = sd_value/mean_value*100) %>% 
+    dplyr::ungroup()
+
+```
+
+Plot intraindividual CV values
+```{r}
+df_means_and_intra_cv %>% 
+    ggplot(aes(x = measure_type, y = cv_value, color = fp))+
+    geom_point()+
+    facet_grid(cols = vars(posture),
+               labeller = as_labeller(c(lying = "Supine position",
+                                        sit = "Upright position")))+
+    theme(
+        panel.background = element_blank(),
+        panel.border = element_rect(colour = "black", fill=NA, linewidth = 0.1),
+        panel.grid.minor=element_blank(),
+        panel.grid.major = element_blank(),
+        plot.background = element_rect(fill = "white"),
+        axis.line = element_blank(),
+        axis.text.x = element_text(color = "black", size = 8),
+        axis.text.y = element_text(color = "black", size = 8),
+        axis.ticks = element_line(linewidth = 0.1),
+        axis.title = element_text(size = 8),
+        axis.title.x = element_text(size = 8),
+        axis.title.y = element_text(size = 8),
+        text = element_text(size = 8),
+        #Make legend keys smaller
+        legend.key.size = unit(0.5, "lines"),
+        #Make legend text smaller
+        legend.text = element_text(size = 6), 
+        #Make space between legend entries smaller
+        legend.spacing.y = unit(0.1, "cm"),
+        legend.title = element_blank(),
+        legend.key = element_blank(),
+        strip.background = element_blank(),
+        #Move strip label position to the left of y-axis labels
+        strip.placement = "outside",
+        legend.position = "right"
+    )+
+    labs(y = "CV (%)",
+       x = NULL)+
+    #rename x labels
+    scale_x_discrete(labels = c(
+                     "hr" = "Heart rate (bpm)",
+                     "sys" = "Systolic\nBP (mmHg)",
+                     "dia" = "Diastolic\nBP (mmHg)"))
+```
+
+Calculate interindividual CV's
+```{r}
+df_means_and_inter_cv <- df %>% 
+    #First calculate the mean within each fp, time and for each measure type
+    dplyr::group_by(posture, measure_type, fp) %>% 
+    #Calculate mean
+    dplyr::summarize(mean_value = mean(value)) %>% 
+    dplyr::ungroup() %>% 
+    #Then calculate inter-individual cv
+    dplyr::group_by(measure_type, posture) %>% 
+    dplyr::summarize(mean = mean(mean_value),
+                     sd = sd(mean_value),
+                     cv = sd/mean*100) %>% 
+    dplyr::ungroup()
+    
+```
+
+Plot interindividual CV values
+```{r}
+df_means_and_inter_cv %>% 
+    ggplot(aes(x = measure_type, y = cv), fill = NA)+
+    geom_bar(stat = "identity")+
+    facet_grid(cols = vars(posture),
+               labeller = as_labeller(c(lying = "Supine position",
+                                        sit = "Upright position")))+
+    theme(
+        panel.background = element_blank(),
+        panel.border = element_rect(colour = "black", fill=NA, linewidth = 0.1),
+        panel.grid.minor=element_blank(),
+        panel.grid.major = element_blank(),
+        plot.background = element_rect(fill = "white"),
+        axis.line = element_blank(),
+        axis.text.x = element_text(color = "black", size = 8),
+        axis.text.y = element_text(color = "black", size = 8),
+        axis.ticks = element_line(linewidth = 0.1),
+        axis.title = element_text(size = 8),
+        axis.title.x = element_text(size = 8),
+        axis.title.y = element_text(size = 8),
+        text = element_text(size = 8),
+        #Make legend keys smaller
+        legend.key.size = unit(0.5, "lines"),
+        #Make legend text smaller
+        legend.text = element_text(size = 6), 
+        #Make space between legend entries smaller
+        legend.spacing.y = unit(0.1, "cm"),
+        legend.title = element_blank(),
+        legend.key = element_blank(),
+        strip.background = element_blank(),
+        #Move strip label position to the left of y-axis labels
+        strip.placement = "outside",
+        legend.position = "right"
+    )+
+    labs(y = "CV (%)",
+       x = NULL)+
+    #rename x labels
+    scale_x_discrete(labels = c(
+                     "hr" = "Heart rate (bpm)",
+                     "sys" = "Systolic\nBP (mmHg)",
+                     "dia" = "Diastolic\nBP (mmHg)"))
+```

@@ -1,0 +1,149 @@
+---
+title: "analysis"
+output: html_document
+date: "2025-01-03"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Load required packages
+```{r}
+library(tidyverse)
+library(here)
+```
+
+Load data file
+```{r}
+data <- readxl::read_xlsx(here::here('data-raw/cv_dxa_vo2.xlsx'))
+```
+
+Convert data to long format
+```{r}
+df <- data %>% 
+    tidyr::pivot_longer(
+        cols = -c(id, visit),
+        names_to = "measurement",
+        values_to = "value"
+    )
+```
+
+###HERE
+Calculate intraindividual CV's
+```{r}
+df_means_and_intra_cv <- df %>% 
+    #Ensure mean calculations are carried out within each subset of data
+    dplyr::group_by(posture, measure_type, fp) %>% 
+    #Calculate mean
+    dplyr::summarize(mean_value = mean(value),
+                     sd_value = sd(value),
+                     cv_value = sd_value/mean_value*100) %>% 
+    dplyr::ungroup()
+
+```
+
+Plot intraindividual CV values
+```{r}
+df_means_and_intra_cv %>% 
+    ggplot(aes(x = measure_type, y = cv_value, color = fp))+
+    geom_point()+
+    facet_grid(cols = vars(posture),
+               labeller = as_labeller(c(lying = "Supine position",
+                                        sit = "Upright position")))+
+    theme(
+        panel.background = element_blank(),
+        panel.border = element_rect(colour = "black", fill=NA, linewidth = 0.1),
+        panel.grid.minor=element_blank(),
+        panel.grid.major = element_blank(),
+        plot.background = element_rect(fill = "white"),
+        axis.line = element_blank(),
+        axis.text.x = element_text(color = "black", size = 8),
+        axis.text.y = element_text(color = "black", size = 8),
+        axis.ticks = element_line(linewidth = 0.1),
+        axis.title = element_text(size = 8),
+        axis.title.x = element_text(size = 8),
+        axis.title.y = element_text(size = 8),
+        text = element_text(size = 8),
+        #Make legend keys smaller
+        legend.key.size = unit(0.5, "lines"),
+        #Make legend text smaller
+        legend.text = element_text(size = 6), 
+        #Make space between legend entries smaller
+        legend.spacing.y = unit(0.1, "cm"),
+        legend.title = element_blank(),
+        legend.key = element_blank(),
+        strip.background = element_blank(),
+        #Move strip label position to the left of y-axis labels
+        strip.placement = "outside",
+        legend.position = "right"
+    )+
+    labs(y = "CV (%)",
+       x = NULL)+
+    #rename x labels
+    scale_x_discrete(labels = c(
+                     "hr" = "Heart rate (bpm)",
+                     "sys" = "Systolic\nBP (mmHg)",
+                     "dia" = "Diastolic\nBP (mmHg)"))
+```
+
+Calculate interindividual CV's
+```{r}
+df_means_and_inter_cv <- df %>% 
+    #First calculate the mean within each fp, time and for each measure type
+    dplyr::group_by(posture, measure_type, fp) %>% 
+    #Calculate mean
+    dplyr::summarize(mean_value = mean(value)) %>% 
+    dplyr::ungroup() %>% 
+    #Then calculate inter-individual cv
+    dplyr::group_by(measure_type, posture) %>% 
+    dplyr::summarize(mean = mean(mean_value),
+                     sd = sd(mean_value),
+                     cv = sd/mean*100) %>% 
+    dplyr::ungroup()
+    
+```
+
+Plot interindividual CV values
+```{r}
+df_means_and_inter_cv %>% 
+    ggplot(aes(x = measure_type, y = cv), fill = NA)+
+    geom_bar(stat = "identity")+
+    facet_grid(cols = vars(posture),
+               labeller = as_labeller(c(lying = "Supine position",
+                                        sit = "Upright position")))+
+    theme(
+        panel.background = element_blank(),
+        panel.border = element_rect(colour = "black", fill=NA, linewidth = 0.1),
+        panel.grid.minor=element_blank(),
+        panel.grid.major = element_blank(),
+        plot.background = element_rect(fill = "white"),
+        axis.line = element_blank(),
+        axis.text.x = element_text(color = "black", size = 8),
+        axis.text.y = element_text(color = "black", size = 8),
+        axis.ticks = element_line(linewidth = 0.1),
+        axis.title = element_text(size = 8),
+        axis.title.x = element_text(size = 8),
+        axis.title.y = element_text(size = 8),
+        text = element_text(size = 8),
+        #Make legend keys smaller
+        legend.key.size = unit(0.5, "lines"),
+        #Make legend text smaller
+        legend.text = element_text(size = 6), 
+        #Make space between legend entries smaller
+        legend.spacing.y = unit(0.1, "cm"),
+        legend.title = element_blank(),
+        legend.key = element_blank(),
+        strip.background = element_blank(),
+        #Move strip label position to the left of y-axis labels
+        strip.placement = "outside",
+        legend.position = "right"
+    )+
+    labs(y = "CV (%)",
+       x = NULL)+
+    #rename x labels
+    scale_x_discrete(labels = c(
+                     "hr" = "Heart rate (bpm)",
+                     "sys" = "Systolic\nBP (mmHg)",
+                     "dia" = "Diastolic\nBP (mmHg)"))
+```
