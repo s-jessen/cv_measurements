@@ -9,7 +9,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 Load required packages
-```{r}
+```{r, include = F}
 library(tidyverse)
 library(here)
 ```
@@ -23,21 +23,30 @@ Convert data to long format
 ```{r}
 df <- data %>% 
     tidyr::pivot_longer(
-        cols = -c(id, visit),
+        cols = -c(id, visit, sex),
         names_to = "measurement",
         values_to = "value"
     )
 ```
 
-###HERE
+```{r}
+df %>% 
+    dplyr::filter(sex == "male") %>% 
+    dplyr::group_by(measurement) %>% 
+    dplyr::mutate(value = scale(value)) %>% 
+    dplyr::ungroup() %>% 
+    ggplot(aes(x = value, color = measurement))+
+    geom_density(bw = 0.5)
+```
+
 Calculate intraindividual CV's
 ```{r}
 df_means_and_intra_cv <- df %>% 
     #Ensure mean calculations are carried out within each subset of data
-    dplyr::group_by(posture, measure_type, fp) %>% 
+    dplyr::group_by(measurement, id) %>% 
     #Calculate mean
-    dplyr::summarize(mean_value = mean(value),
-                     sd_value = sd(value),
+    dplyr::summarize(mean_value = mean(value, na.rm = T),
+                     sd_value = sd(value, na.rm = T),
                      cv_value = sd_value/mean_value*100) %>% 
     dplyr::ungroup()
 
@@ -46,11 +55,11 @@ df_means_and_intra_cv <- df %>%
 Plot intraindividual CV values
 ```{r}
 df_means_and_intra_cv %>% 
-    ggplot(aes(x = measure_type, y = cv_value, color = fp))+
+    ggplot(aes(x = measurement, y = cv_value, color = id))+
     geom_point()+
-    facet_grid(cols = vars(posture),
-               labeller = as_labeller(c(lying = "Supine position",
-                                        sit = "Upright position")))+
+    #facet_grid(cols = vars(posture),
+    #           labeller = as_labeller(c(lying = "Supine position",
+    #                                    sit = "Upright position")))+
     theme(
         panel.background = element_blank(),
         panel.border = element_rect(colour = "black", fill=NA, linewidth = 0.1),
@@ -64,7 +73,7 @@ df_means_and_intra_cv %>%
         axis.title = element_text(size = 8),
         axis.title.x = element_text(size = 8),
         axis.title.y = element_text(size = 8),
-        text = element_text(size = 8),
+        text = element_text(size = 8, family = "Source Sans Pro"),
         #Make legend keys smaller
         legend.key.size = unit(0.5, "lines"),
         #Make legend text smaller
@@ -76,29 +85,84 @@ df_means_and_intra_cv %>%
         strip.background = element_blank(),
         #Move strip label position to the left of y-axis labels
         strip.placement = "outside",
-        legend.position = "right"
+        legend.position = "none"
     )+
     labs(y = "CV (%)",
-       x = NULL)+
+       x = NULL,
+       title = "Intra-individual CV")+
     #rename x labels
     scale_x_discrete(labels = c(
-                     "hr" = "Heart rate (bpm)",
-                     "sys" = "Systolic\nBP (mmHg)",
-                     "dia" = "Diastolic\nBP (mmHg)"))
+                     "dxa" = "DXA",
+                     "hr_max" = "HR max",
+                     "ppo" = "Wingate PPO",
+                     "vo2max" = "VO2max"))
+
+ggsave(here::here('data/figures/intra_individual_cv_terfor.png'), width = 150, height = 75, units = "mm")
 ```
+
+Select a high and low CV example for individual plotting
+```{r}
+df %>% 
+    dplyr::filter(measurement == "ppo") %>% 
+    dplyr::filter(visit != 0) %>% 
+    dplyr::filter(id == "FOR27" | id == "FOR10") %>% 
+    ggplot(aes(x = visit, y = value))+
+    geom_point(size = 2)+
+    facet_grid(cols = vars(id),
+               labeller = as_labeller(c(
+                   "FOR10" = paste0("FOR10 (CV: ", 
+                                    round(df_means_and_intra_cv[df_means_and_intra_cv$measurement == "ppo" & df_means_and_intra_cv$id == "FOR10", "cv_value"], 1),
+                                    "%)"),
+                   "FOR27" = paste0("FOR27 (CV: ", 
+                                    round(df_means_and_intra_cv[df_means_and_intra_cv$measurement == "ppo" & df_means_and_intra_cv$id == "FOR27", "cv_value"], 1),
+                                    "%)")
+               )))+
+    theme(
+        panel.background = element_blank(),
+        panel.border = element_rect(colour = "black", fill=NA, linewidth = 0.1),
+        panel.grid.minor=element_blank(),
+        panel.grid.major = element_blank(),
+        plot.background = element_rect(fill = "white"),
+        axis.line = element_blank(),
+        axis.text.x = element_text(color = "black", size = 8),
+        axis.text.y = element_text(color = "black", size = 8),
+        axis.ticks = element_line(linewidth = 0.1),
+        axis.title = element_text(size = 8),
+        axis.title.x = element_text(size = 8),
+        axis.title.y = element_text(size = 8),
+        text = element_text(size = 8, family = "Source Sans Pro"),
+        #Make legend keys smaller
+        legend.key.size = unit(0.5, "lines"),
+        #Make legend text smaller
+        legend.text = element_text(size = 6), 
+        #Make space between legend entries smaller
+        legend.spacing.y = unit(0.1, "cm"),
+        legend.title = element_blank(),
+        legend.key = element_blank(),
+        strip.background = element_blank(),
+        #Move strip label position to the left of y-axis labels
+        strip.placement = "outside",
+        legend.position = "none"
+    )+
+    labs(y = "PPO (W)",
+         x = "Visit")
+
+ggsave(here::here('data/figures/cv_highest_and_lowest_ppo_terfor.png'), width = 75, height = 50, units = "mm")
+```
+
 
 Calculate interindividual CV's
 ```{r}
 df_means_and_inter_cv <- df %>% 
     #First calculate the mean within each fp, time and for each measure type
-    dplyr::group_by(posture, measure_type, fp) %>% 
+    dplyr::group_by(measurement, id) %>% 
     #Calculate mean
-    dplyr::summarize(mean_value = mean(value)) %>% 
+    dplyr::summarize(mean_value = mean(value, na.rm = T)) %>% 
     dplyr::ungroup() %>% 
     #Then calculate inter-individual cv
-    dplyr::group_by(measure_type, posture) %>% 
-    dplyr::summarize(mean = mean(mean_value),
-                     sd = sd(mean_value),
+    dplyr::group_by(measurement) %>% 
+    dplyr::summarize(mean = mean(mean_value, na.rm = T),
+                     sd = sd(mean_value, na.rm = T),
                      cv = sd/mean*100) %>% 
     dplyr::ungroup()
     
@@ -107,11 +171,8 @@ df_means_and_inter_cv <- df %>%
 Plot interindividual CV values
 ```{r}
 df_means_and_inter_cv %>% 
-    ggplot(aes(x = measure_type, y = cv), fill = NA)+
+    ggplot(aes(x = measurement, y = cv), fill = NA)+
     geom_bar(stat = "identity")+
-    facet_grid(cols = vars(posture),
-               labeller = as_labeller(c(lying = "Supine position",
-                                        sit = "Upright position")))+
     theme(
         panel.background = element_blank(),
         panel.border = element_rect(colour = "black", fill=NA, linewidth = 0.1),
@@ -143,7 +204,127 @@ df_means_and_inter_cv %>%
        x = NULL)+
     #rename x labels
     scale_x_discrete(labels = c(
-                     "hr" = "Heart rate (bpm)",
-                     "sys" = "Systolic\nBP (mmHg)",
-                     "dia" = "Diastolic\nBP (mmHg)"))
+                     "dxa" = "DXA",
+                     "hr_max" = "HR max",
+                     "ppo" = "Wingate PPO",
+                     "vo2max" = "VO2max"))
 ```
+
+Calculate interindividual CV's w. sex
+```{r}
+df_means_and_inter_cv_sex <- df %>% 
+    #First calculate the mean within each fp, time and for each measure type
+    dplyr::group_by(measurement, id, sex) %>% 
+    #Calculate mean
+    dplyr::summarize(mean_value = mean(value, na.rm = T)) %>% 
+    dplyr::ungroup() %>% 
+    #Then calculate inter-individual cv
+    dplyr::group_by(measurement, sex) %>% 
+    dplyr::summarize(mean = mean(mean_value, na.rm = T),
+                     sd = sd(mean_value, na.rm = T),
+                     cv = sd/mean*100) %>% 
+    dplyr::ungroup()
+
+#Add non-sex specific CV's
+add_in <- df_means_and_inter_cv %>% 
+    dplyr::mutate(sex = "both")
+
+df_means_and_inter_cv_both_sexes <- rbind(df_means_and_inter_cv_sex, add_in)
+    
+```
+
+```{r}
+df_means_and_inter_cv_both_sexes %>% 
+    ggplot(aes(x = measurement, y = cv, fill = sex))+
+    geom_bar(stat = "identity")+
+    theme(
+        panel.background = element_blank(),
+        panel.border = element_rect(colour = "black", fill=NA, linewidth = 0.1),
+        panel.grid.minor=element_blank(),
+        panel.grid.major = element_blank(),
+        plot.background = element_rect(fill = "white"),
+        axis.line = element_blank(),
+        axis.text.x = element_text(color = "black", size = 8),
+        axis.text.y = element_text(color = "black", size = 8),
+        axis.ticks = element_line(linewidth = 0.1),
+        axis.title = element_text(size = 8),
+        axis.title.x = element_text(size = 8),
+        axis.title.y = element_text(size = 8),
+        text = element_text(size = 8),
+        #Make legend keys smaller
+        legend.key.size = unit(0.5, "lines"),
+        #Make legend text smaller
+        legend.text = element_text(size = 6), 
+        #Make space between legend entries smaller
+        legend.spacing.y = unit(0.1, "cm"),
+        legend.title = element_blank(),
+        legend.key = element_blank(),
+        strip.background = element_blank(),
+        #Move strip label position to the left of y-axis labels
+        strip.placement = "outside",
+        legend.position = "right"
+    )+
+    labs(y = "Inter individual CV (%)",
+       x = NULL)+
+    #rename x labels
+    scale_x_discrete(labels = c(
+                     "dxa" = "DXA",
+                     "hr_max" = "HR max",
+                     "ppo" = "Wingate\nPPO",
+                     "vo2max" = "VO2max"))+
+    scale_fill_manual(values = c(male = "#50a3cf", female = "#c72b23", both = "gray"),
+                      labels = c(male = "Male", female = "Female", both = "Both sexes combined"))+
+    facet_grid(cols = vars(sex),
+               labeller = as_labeller(c("female" = "Female",
+                                      "male" = "Male",
+                                      "both" = "Both sexes combined")))
+
+ggsave(here::here('data/figures/intraindividual_cv_terfor.png'), width = 200, height = 75, units = "mm")
+```
+
+Show distribution differences between sexes
+```{r}
+df %>% 
+    dplyr::filter(measurement == "hr_max" | measurement == "dxa") %>% 
+    ggplot(aes(x = value, color = sex))+
+    geom_density(bw = 3, linewidth = 2, trim = F)+
+    geom_rug(linewidth = 1, alpha = 0.2)+
+    theme(
+        panel.background = element_blank(),
+        panel.border = element_rect(colour = "black", fill=NA, linewidth = 0.1),
+        panel.grid.minor=element_blank(),
+        panel.grid.major = element_blank(),
+        plot.background = element_rect(fill = "white"),
+        axis.line = element_blank(),
+        axis.text.x = element_text(color = "black", size = 8),
+        axis.text.y = element_text(color = "black", size = 8),
+        axis.ticks = element_line(linewidth = 0.1),
+        axis.title = element_text(size = 8),
+        axis.title.x = element_text(size = 8),
+        axis.title.y = element_text(size = 8),
+        text = element_text(size = 8),
+        #Make legend keys smaller
+        legend.key.size = unit(0.5, "lines"),
+        #Make legend text smaller
+        legend.text = element_text(size = 6), 
+        #Make space between legend entries smaller
+        legend.spacing.y = unit(0.1, "cm"),
+        legend.title = element_blank(),
+        legend.key = element_blank(),
+        strip.background = element_blank(),
+        #Move strip label position to the left of y-axis labels
+        strip.placement = "outside",
+        legend.position = "right"
+    )+
+    labs(y = "Density",
+         x = "Measurement")+
+    scale_color_manual(values = c(male = "#50a3cf", female = "#c72b23"),
+                      labels = c(male = "Male", female = "Female"))+
+    facet_grid(cols = vars(measurement),
+               scales = "free",
+               labeller = as_labeller(c("dxa" = "DXA",
+                                      "hr_max" = "HR max")))
+
+ggsave(here::here('data/figures/densities_dxa_hr_max_terfor.png'), width = 200, height = 75, units = "mm")
+```
+

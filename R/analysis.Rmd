@@ -26,10 +26,10 @@ data$fp <- make.unique(data$fp)
 Convert data to long format
 ```{r}
 df <- data %>% 
-    # Remove unnecessary columns
+    # Remove unnecessary (for the present analysis) columns
     dplyr::select(-c(time, age, height, sex, weight, bmi, training_status, position,
                      hematocrit_capillary, plasma_na, hb_g_dl, usg)) %>% 
-    # Pivot longer to create 'posture' and 'measure_type' columns
+    # Pivot data to long form (i.e., create 'posture' and 'measure_type' columns, and a single column for all values)
     tidyr::pivot_longer(
         cols = -fp,
         names_to = c("measure_type", "posture", ".value"),
@@ -63,6 +63,7 @@ df %>%
                cols = vars(measure_type),
                scales = "free_y")
 ```
+
 Visualize II (Make the plot more presentable)
 ```{r}
 #Better visualization with aesthetic controls
@@ -75,6 +76,7 @@ df %>%
     facet_grid(rows = vars(posture),
                cols = vars(measure_type),
                scales = "free_y",
+               #Add clean labels
                labeller = as_labeller(
                    c("lying" = "Supine position",
                      "sit" = "Upright position",
